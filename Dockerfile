@@ -24,6 +24,6 @@ COPY ./src ./src
 # Make port 8000 available to the world outside this container
 EXPOSE 8000
 
-# Define the command to run your app using uvicorn
+# Define the command to run your app using uvicorn+
 # We use --host 0.0.0.0 to allow connections from outside the container
 CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
