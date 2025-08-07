@@ -1,29 +1,27 @@
-# Use an official Python runtime as a parent image
+# Use official minimal base image
 FROM python:3.10-slim
 
-# Set the working directory in the container
-WORKDIR /app
-
-# Install system dependencies required for some Python packages
-# This is important for libraries like opencv-python and PyMuPDF
+# Install system-level packages needed for PDF parsing
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    build-essential \
     libglib2.0-0 \
+    libgl1-mesa-glx \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
+WORKDIR /app
+
+# Copy requirements and install torch CPU version manually
 COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-# We use --no-cache-dir to reduce image size
+# Install torch CPU separately to avoid CUDA bloating
+RUN pip install --no-cache-dir torch==2.0.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+
+# Install rest of the deps
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application's code into the container
+# Copy app code
 COPY ./src ./src
 
-# Make port 8000 available to the world outside this container
 EXPOSE 8000
-
-# Define the command to run your app using uvicorn+
-# We use --host 0.0.0.0 to allow connections from outside the container
 CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
