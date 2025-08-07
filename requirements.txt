@@ -1,0 +1,130 @@
+# =============================================================================
+# HACKRX ULTRA-ACCURATE QUERY-RETRIEVAL SYSTEM - PRODUCTION REQUIREMENTS
+# =============================================================================
+
+# Core API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# Document Processing (Essential - Multiple Methods)
+PyMuPDF==1.23.8              # Primary PDF parser
+pdfplumber==0.10.3           # Secondary PDF parser with table extraction
+pdf2image==1.16.3            # PDF to image conversion for OCR
+pytesseract==0.3.10          # OCR for scanned PDFs
+tika                         # Advanced document parsing
+python-docx==1.1.0           # Word document support
+openpyxl==3.1.2              # Excel support
+
+# HTTP & Network
+requests==2.32.3
+aiohttp==3.9.1               # Async HTTP client
+urllib3==2.1.0               # Alternative download method
+httpx==0.25.2                # Modern HTTP client
+huggingface-hub==0.20.3      # Required for sentence-transformers
+
+# OpenAI Integration (Required)
+openai>=1.3.0
+tiktoken>=0.5.1
+
+# Semantic Search & NLP (Critical for Accuracy)
+sentence-transformers==2.2.2 # Semantic embeddings
+torch>=2.0.0                 # Deep learning backend
+transformers>=4.35.0         # Transformer models
+scikit-learn==1.3.2          # ML utilities
+numpy==1.24.3                # Numerical operations
+scipy==1.11.4                # Scientific computing
+
+# NLP & Entity Recognition
+spacy==3.7.2                 # NLP and NER
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.0/en_core_web_sm-3.7.0-py3-none-any.whl
+
+# Text Processing & Matching
+fuzzywuzzy==0.18.0           # Fuzzy string matching
+python-Levenshtein==0.23.0   # String similarity
+regex==2023.10.3             # Advanced regex
+unidecode==1.3.7             # Unicode text processing
+
+# Image Processing (for OCR)
+Pillow==10.1.0               # Image manipulation
+opencv-python==4.8.1.78      # Computer vision for OCR preprocessing
+
+# Data Processing
+pandas==2.1.3                # Data manipulation
+python-dateutil==2.8.2       # Date parsing
+pytz==2023.3                 # Timezone support
+
+# Caching & Performance
+cachetools==5.3.2
+redis==5.0.1                 # Production caching
+aiofiles==23.2.1             # Async file operations
+aiocache==0.12.2             # Async caching
+
+# Environment & Configuration
+python-dotenv==1.0.0
+
+# Database Support (for persistent caching)
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9       # PostgreSQL
+pymongo==4.6.0               # MongoDB (optional)
+
+# Production Optimizations
+psutil==5.9.6
+orjson==3.9.10               # Fast JSON
+
+# Monitoring & Logging
+prometheus-client==0.19.0     # Metrics
+structlog==23.2.0            # Structured logging
+loguru==0.7.2                # Advanced logging
+sentry-sdk==1.38.0           # Error tracking
+
+# API Rate Limiting & Security
+slowapi==0.1.9               # Rate limiting
+python-jose[cryptography]==3.3.0  # JWT tokens
+passlib[bcrypt]==1.7.4      # Password hashing
+
+# Testing & Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+faker==20.1.0                # Test data generation
+locust==2.19.0               # Load testing
+
+# Code Quality
+black==23.11.0               # Code formatting
+flake8==6.1.0                # Linting
+mypy==1.7.1                  # Type checking
+pre-commit==3.5.0            # Git hooks
+
+# Optional: Advanced Document Analysis
+camelot-py==0.11.0       # Table extraction from PDFs
+tabula-py==2.8.2             # Alternative table extraction
+pdfminer.six==20221105       # Low-level PDF parsing
+
+# Optional: Language Detection & Translation
+langdetect==1.0.9            # Language detection
+googletrans       # Translation support
+
+# System Dependencies (Install separately):
+# ==========================================
+# Ubuntu/Debian:
+#   sudo apt-get update
+#   sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+#   sudo apt-get install -y poppler-utils
+#   sudo apt-get install -y libmagic1
+#   sudo apt-get install -y ghostscript
+#
+# macOS:
+#   brew install tesseract
+#   brew install poppler
+#   brew install libmagic
+#   brew install ghostscript
+#
+# Windows:
+#   Download Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
+#   Download Poppler from: https://blog.alivate.com.au/poppler-windows/
+
+# Note: For production deployment, consider using Docker to ensure
+# all system dependencies are properly installed and configured.
