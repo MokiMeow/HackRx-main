@@ -34,11 +34,15 @@ class Config:
     CHUNK_CACHE_SIZE = 1000
     CACHE_TTL = 14400  # 4 hours
 
-    # Model settings
-    MAX_TOKENS = 1000
-    TIMEOUT = 30
-    RETRY_ATTEMPTS = 3
-    RETRY_MAX_TIME = 60
+    # Model settings - OPTIMIZED FOR DEPLOYMENT
+    MAX_TOKENS = 800  # Reduced for faster response
+    TIMEOUT = 45  # Increased timeout for deployment
+    RETRY_ATTEMPTS = 2  # Reduced for faster failure
+    RETRY_MAX_TIME = 90  # Increased for deployment
+
+    # Deployment optimizations
+    MAX_CONCURRENT_REQUESTS = 3
+    REQUEST_TIMEOUT = 120  # 2 minutes total timeout
 import fitz  # PyMuPDF
 from openai import OpenAI
 import pdfplumber
@@ -213,8 +217,8 @@ class OptimizedDocumentParser:
             try:
                 logger.info(f"Parsing document (attempt {attempt + 1}): {doc_url}")
 
-                # Download PDF with timeout
-                response = self.session.get(doc_url, timeout=90)
+                # Download PDF with increased timeout for deployment
+                response = self.session.get(doc_url, timeout=120)  # Increased timeout
                 response.raise_for_status()
                 pdf_content = response.content
 
@@ -239,7 +243,7 @@ class OptimizedDocumentParser:
                 except Exception as e:
                     logger.warning(f"PyMuPDF error: {e}")
 
-                # PDFPlumber - Better for tables
+                # PDFPlumber - Better for tables (with timeout)
                 try:
                     import io
                     with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
@@ -250,23 +254,24 @@ class OptimizedDocumentParser:
                             if text:
                                 plumber_text += f"\n[PAGE {page_num + 1}]\n{text}\n"
 
-                            # Extract tables
-                            page_tables = page.extract_tables()
-                            if page_tables:
-                                for idx, table in enumerate(page_tables):
-                                    # Add table to text for searchability
-                                    table_text = f"\n[TABLE P{page_num + 1}-{idx + 1}]\n"
-                                    for row in table:
-                                        if row:
-                                            clean_row = [str(cell).strip() if cell else "" for cell in row]
-                                            table_text += " | ".join(clean_row) + "\n"
-                                    plumber_text += table_text
+                            # Extract tables (limit to avoid timeout)
+                            if page_num < 50:  # Limit pages for deployment
+                                page_tables = page.extract_tables()
+                                if page_tables:
+                                    for idx, table in enumerate(page_tables):
+                                        # Add table to text for searchability
+                                        table_text = f"\n[TABLE P{page_num + 1}-{idx + 1}]\n"
+                                        for row in table:
+                                            if row:
+                                                clean_row = [str(cell).strip() if cell else "" for cell in row]
+                                                table_text += " | ".join(clean_row) + "\n"
+                                        plumber_text += table_text
 
-                                    # Store table
-                                    tables.append({
-                                        'page': page_num + 1,
-                                        'data': table
-                                    })
+                                        # Store table
+                                        tables.append({
+                                            'page': page_num + 1,
+                                            'data': table
+                                        })
 
                         # Use plumber text if it's longer (usually more complete)
                         if len(plumber_text) > len(full_text):
@@ -834,56 +839,69 @@ async def process_query(
     try:
         logger.info(f"Processing {len(request.questions)} questions with WINNING STRATEGY")
 
-        # Parse document with retry
-        doc_data = await document_parser.parse_document(request.documents)
+        # Add timeout for entire request
+        async def process_with_timeout():
+            # Parse document with retry
+            doc_data = await document_parser.parse_document(request.documents)
 
-        if not doc_data.get('full_text'):
-            return {"answers": ["Unable to parse document after multiple attempts"] * len(request.questions)}
+            if not doc_data.get('full_text'):
+                return {"answers": ["Unable to parse document after multiple attempts"] * len(request.questions)}
 
-        # Create comprehensive chunks
-        chunks = create_winning_chunks(doc_data)
-        if not chunks:
-            return {"answers": ["No content found in document"] * len(request.questions)}
+            # Create comprehensive chunks
+            chunks = create_winning_chunks(doc_data)
+            if not chunks:
+                return {"answers": ["No content found in document"] * len(request.questions)}
 
-        # Index chunks
-        retriever.index_documents(chunks)
+            # Index chunks
+            retriever.index_documents(chunks)
 
-        # WINNING STRATEGY: Process questions by priority
-        question_priorities = []
-        for i, question in enumerate(request.questions):
-            priority = calculate_priority_score(question, request.documents)
-            question_priorities.append((i, question, priority))
+            # WINNING STRATEGY: Process questions by priority
+            question_priorities = []
+            for i, question in enumerate(request.questions):
+                priority = calculate_priority_score(question, request.documents)
+                question_priorities.append((i, question, priority))
 
-        # Sort by priority (highest first)
-        question_priorities.sort(key=lambda x: x[2], reverse=True)
+            # Sort by priority (highest first)
+            question_priorities.sort(key=lambda x: x[2], reverse=True)
 
-        logger.info(f"Question priorities: {[(q[1][:30], q[2]) for q in question_priorities[:3]]}")
+            logger.info(f"Question priorities: {[(q[1][:30], q[2]) for q in question_priorities[:3]]}")
 
-        # Process questions in priority order
-        answers = [""] * len(request.questions)
-        for original_index, question, priority_score in question_priorities:
-            logger.info(f"Processing Q{original_index+1} (Priority: {priority_score:.1f}x): {question[:50]}...")
+            # Process questions in priority order
+            answers = [""] * len(request.questions)
+            for original_index, question, priority_score in question_priorities:
+                logger.info(f"Processing Q{original_index+1} (Priority: {priority_score:.1f}x): {question[:50]}...")
 
-            # Retrieve with priority-based parameters - OPTIMIZED FOR SPEED
-            relevant = retriever.retrieve(question, top_k=35, priority_score=priority_score)  # OPTIMIZED FOR SPEED
+                # Retrieve with priority-based parameters - OPTIMIZED FOR SPEED
+                relevant = retriever.retrieve(question, top_k=25, priority_score=priority_score)  # Reduced for speed
 
-            if not relevant:
-                answers[original_index] = "No relevant information found in the document for this question."
-                continue
+                if not relevant:
+                    answers[original_index] = "No relevant information found in the document for this question."
+                    continue
 
-            # Generate answer with priority-based resource allocation
-            result = await reasoning_engine.reason(
-                question,
-                relevant,
-                doc_data.get('tables', []),
-                priority_score
+                # Generate answer with priority-based resource allocation
+                result = await reasoning_engine.reason(
+                    question,
+                    relevant,
+                    doc_data.get('tables', []),
+                    priority_score
+                )
+
+                answers[original_index] = result['answer']
+                logger.info(f"Q{original_index+1} Confidence: {result['confidence']:.1%}, Priority: {priority_score:.1f}x")
+
+            return {"answers": answers}
+
+        # Execute with timeout
+        try:
+            response = await asyncio.wait_for(
+                process_with_timeout(),
+                timeout=Config.REQUEST_TIMEOUT
             )
-
-            answers[original_index] = result['answer']
-            logger.info(f"Q{original_index+1} Confidence: {result['confidence']:.1%}, Priority: {priority_score:.1f}x")
+        except asyncio.TimeoutError:
+            logger.error("Request timed out")
+            return {"answers": ["Request timed out. Please try again with a simpler query."] * len(request.questions)}
 
         # Cache response
-        response = {"answers": answers}
         response_cache[cache_key] = response
 
         total_time = time.time() - start_time
@@ -894,6 +912,22 @@ async def process_query(
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         return {"answers": [f"System error: {str(e)}"] * len(request.questions)}
+
+
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint for debugging deployment issues"""
+    return {
+        "status": "ok",
+        "message": "API is working",
+        "timestamp": time.time(),
+        "environment": {
+            "python_version": "3.10",
+            "openai_available": bool(os.getenv('OPENAI_API_KEY')),
+            "bearer_token_set": bool(os.getenv('BEARER_TOKEN')),
+            "semantic_model_loaded": semantic_model is not None
+        }
+    }
 
 
 @app.get("/health")
