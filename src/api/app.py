@@ -22,27 +22,27 @@ class Config:
     UNKNOWN_DOC_WEIGHT = 3.0
     KNOWN_DOC_WEIGHT = 0.5
 
-    # Chunk sizes (optimized for token limits)
-    MAX_CHUNK_SIZE = 2000  # Reduced from 3000 to avoid token limits
-    MEDIUM_CHUNK_SIZE = 1500
-    SMALL_CHUNK_SIZE = 1000
-    MINI_CHUNK_SIZE = 500
+    # Chunk sizes - OPTIMIZED FOR 1GB MEMORY
+    MAX_CHUNK_SIZE = 1000  # Reduced from 2000 to save memory
+    MEDIUM_CHUNK_SIZE = 750  # Reduced from 1500
+    SMALL_CHUNK_SIZE = 500   # Reduced from 1000
+    MINI_CHUNK_SIZE = 250    # Reduced from 500
 
-    # Cache settings
-    RESPONSE_CACHE_SIZE = 1000
-    DOCUMENT_CACHE_SIZE = 500
-    CHUNK_CACHE_SIZE = 1000
-    CACHE_TTL = 14400  # 4 hours
+    # Cache settings - OPTIMIZED FOR 1GB MEMORY
+    RESPONSE_CACHE_SIZE = 100  # Reduced from 1000
+    DOCUMENT_CACHE_SIZE = 50   # Reduced from 500
+    CHUNK_CACHE_SIZE = 100     # Reduced from 1000
+    CACHE_TTL = 7200  # 2 hours (reduced from 4 hours)
 
-    # Model settings - OPTIMIZED FOR DEPLOYMENT
-    MAX_TOKENS = 800  # Reduced for faster response
-    TIMEOUT = 45  # Increased timeout for deployment
-    RETRY_ATTEMPTS = 2  # Reduced for faster failure
-    RETRY_MAX_TIME = 90  # Increased for deployment
+    # Model settings - OPTIMIZED FOR 1GB MEMORY
+    MAX_TOKENS = 600  # Reduced from 800 for memory efficiency
+    TIMEOUT = 30      # Reduced from 45 for faster processing
+    RETRY_ATTEMPTS = 1  # Reduced from 2 for memory efficiency
+    RETRY_MAX_TIME = 60  # Reduced from 90
 
-    # Deployment optimizations
-    MAX_CONCURRENT_REQUESTS = 3
-    REQUEST_TIMEOUT = 120  # 2 minutes total timeout
+    # Deployment optimizations for 1GB memory
+    MAX_CONCURRENT_REQUESTS = 1  # Reduced from 3
+    REQUEST_TIMEOUT = 90  # Reduced from 120 to 1.5 minutes
 import fitz  # PyMuPDF
 from openai import OpenAI
 import pdfplumber
@@ -203,7 +203,7 @@ class OptimizedDocumentParser:
         })
 
     async def parse_document(self, doc_url: str) -> Dict:
-        """Fast and comprehensive document parsing with retry logic and caching"""
+        """Fast and comprehensive document parsing with retry logic and caching - OPTIMIZED FOR 1GB MEMORY"""
 
         # Check document cache first
         doc_hash = hashlib.md5(doc_url.encode()).hexdigest()
@@ -211,14 +211,14 @@ class OptimizedDocumentParser:
             logger.info("Using cached document")
             return document_cache[doc_hash]
 
-        max_retries = 3
+        max_retries = 2  # Reduced from 3 for memory efficiency
 
         for attempt in range(max_retries):
             try:
                 logger.info(f"Parsing document (attempt {attempt + 1}): {doc_url}")
 
-                # Download PDF with increased timeout for deployment
-                response = self.session.get(doc_url, timeout=120)  # Increased timeout
+                # Download PDF with reduced timeout for 1GB memory
+                response = self.session.get(doc_url, timeout=60)  # Reduced from 120
                 response.raise_for_status()
                 pdf_content = response.content
 
@@ -227,51 +227,58 @@ class OptimizedDocumentParser:
 
                 logger.info(f"Downloaded {len(pdf_content)} bytes")
 
-                # Parse with both methods for completeness
+                # Parse with both methods for completeness - OPTIMIZED FOR MEMORY
                 full_text = ""
                 tables = []
 
-                # PyMuPDF - Fast and reliable
+                # PyMuPDF - Fast and reliable (memory efficient)
                 try:
                     doc = fitz.open(stream=pdf_content, filetype="pdf")
-                    for page_num, page in enumerate(doc):
+                    # Limit pages for memory efficiency
+                    max_pages = min(30, len(doc))  # Limit to 30 pages for 1GB memory
+                    for page_num in range(max_pages):
+                        page = doc[page_num]
                         text = page.get_text()
                         if text.strip():
                             full_text += f"\n[PAGE {page_num + 1}]\n{text}\n"
                     doc.close()
-                    logger.info(f"PyMuPDF: {len(full_text)} chars")
+                    logger.info(f"PyMuPDF: {len(full_text)} chars from {max_pages} pages")
                 except Exception as e:
                     logger.warning(f"PyMuPDF error: {e}")
 
-                # PDFPlumber - Better for tables (with timeout)
+                # PDFPlumber - Better for tables (with memory limits)
                 try:
                     import io
                     with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
                         plumber_text = ""
-                        for page_num, page in enumerate(pdf.pages):
+                        # Limit pages for memory efficiency
+                        max_plumber_pages = min(20, len(pdf.pages))  # Further limit for memory
+                        for page_num in range(max_plumber_pages):
+                            page = pdf.pages[page_num]
                             # Extract text
                             text = page.extract_text()
                             if text:
                                 plumber_text += f"\n[PAGE {page_num + 1}]\n{text}\n"
 
-                            # Extract tables (limit to avoid timeout)
-                            if page_num < 50:  # Limit pages for deployment
+                            # Extract tables (very limited for memory)
+                            if page_num < 10:  # Only first 10 pages for tables
                                 page_tables = page.extract_tables()
                                 if page_tables:
-                                    for idx, table in enumerate(page_tables):
+                                    for idx, table in enumerate(page_tables[:3]):  # Max 3 tables per page
                                         # Add table to text for searchability
                                         table_text = f"\n[TABLE P{page_num + 1}-{idx + 1}]\n"
-                                        for row in table:
+                                        for row in table[:10]:  # Max 10 rows per table
                                             if row:
                                                 clean_row = [str(cell).strip() if cell else "" for cell in row]
                                                 table_text += " | ".join(clean_row) + "\n"
                                         plumber_text += table_text
 
-                                        # Store table
-                                        tables.append({
-                                            'page': page_num + 1,
-                                            'data': table
-                                        })
+                                        # Store table (limited)
+                                        if len(tables) < 20:  # Max 20 tables total
+                                            tables.append({
+                                                'page': page_num + 1,
+                                                'data': table[:10]  # Max 10 rows
+                                            })
 
                         # Use plumber text if it's longer (usually more complete)
                         if len(plumber_text) > len(full_text):
@@ -289,6 +296,11 @@ class OptimizedDocumentParser:
                 full_text = re.sub(r' {3,}', '  ', full_text)
                 full_text = re.sub(r'Rs\.?\s*(\d)', r'Rs.\1', full_text)
 
+                # Limit text size for memory efficiency
+                if len(full_text) > 50000:  # Limit to 50KB for memory
+                    full_text = full_text[:50000]
+                    logger.info("Text truncated to 50KB for memory efficiency")
+
                 logger.info(f"Parsed successfully: {len(full_text)} chars")
 
                 result = {
@@ -303,7 +315,7 @@ class OptimizedDocumentParser:
             except Exception as e:
                 logger.error(f"Parse attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(1)  # Reduced backoff for memory efficiency
                 else:
                     return {'full_text': '', 'tables': []}
 
@@ -369,8 +381,8 @@ class WinningRetriever:
             self.tfidf_matrix = None
             self.tfidf_vectorizer = None
 
-    def retrieve(self, query: str, top_k: int = 35, priority_score: float = 1.0) -> List[Dict]:  # OPTIMIZED FOR SPEED
-        """Advanced retrieval with priority-based scoring"""
+    def retrieve(self, query: str, top_k: int = 15, priority_score: float = 1.0) -> List[Dict]:  # OPTIMIZED FOR 1GB MEMORY
+        """Advanced retrieval with priority-based scoring - OPTIMIZED FOR 1GB MEMORY"""
         if not self.chunks:
             return []
 
@@ -388,24 +400,24 @@ class WinningRetriever:
         query_amounts = re.findall(r'[₹$]\s*[\d,]+(?:\.\d+)?|Rs\.?\s*[\d,]+', query)
         query_percentages = re.findall(r'\b\d+(?:\.\d+)?%\b', query)
 
-        # Pre-compute embeddings
+        # Pre-compute embeddings (memory efficient)
         query_embedding = None
-        if self.embeddings is not None and semantic_model:
+        if self.embeddings is not None and semantic_model and len(self.chunks) < 500:  # Limit for memory
             try:
                 query_embedding = semantic_model.encode([query], show_progress_bar=False, normalize_embeddings=True)[0]
             except:
                 pass
 
-        # Pre-compute TF-IDF
+        # Pre-compute TF-IDF (memory efficient)
         query_tfidf = None
-        if self.tfidf_vectorizer and self.tfidf_matrix is not None:
+        if self.tfidf_vectorizer and self.tfidf_matrix is not None and len(self.chunks) < 500:  # Limit for memory
             try:
                 query_tfidf = self.tfidf_vectorizer.transform([query])
             except:
                 pass
 
-        # Score all chunks with priority multiplier
-        for i, chunk in enumerate(self.chunks):
+        # Score chunks with memory optimization
+        for i, chunk in enumerate(self.chunks[:500]):  # Limit to 500 chunks for memory
             chunk_text = chunk['text']
             chunk_lower = chunk_text.lower()
 
@@ -445,7 +457,7 @@ class WinningRetriever:
             if query_words:
                 score += (overlap / len(query_words)) * 80
 
-            # 6. Semantic similarity
+            # 6. Semantic similarity (memory efficient)
             if query_embedding is not None and self.embeddings is not None:
                 try:
                     similarity = np.dot(query_embedding, self.embeddings[i])
@@ -453,7 +465,7 @@ class WinningRetriever:
                 except:
                     pass
 
-            # 7. TF-IDF similarity
+            # 7. TF-IDF similarity (memory efficient)
             if query_tfidf is not None and self.tfidf_matrix is not None:
                 try:
                     tfidf_sim = cosine_similarity(query_tfidf, self.tfidf_matrix[i:i+1])[0][0]
@@ -479,7 +491,7 @@ class WinningRetriever:
                 if any(kw in query_lower for kw in page_keywords):
                     score += 40
 
-                        # 11. Context proximity bonus
+            # 11. Context proximity bonus
             if len(query_words) > 1:
                 for word in query_words:
                     if word in chunk_lower:
@@ -493,7 +505,7 @@ class WinningRetriever:
             keyword_density = sum(1 for word in query_words if word in chunk_lower) / len(chunk_words) if chunk_words else 0
             score += keyword_density * 120
 
-                        # 13. Insurance document specific scoring - MAXIMUM BOOST
+            # 13. Insurance document specific scoring - MAXIMUM BOOST
             if any(term in chunk_lower for term in ['policy', 'insurance', 'coverage', 'claim']):
                 # Bonus for insurance-related content
                 score += 100  # DOUBLED
@@ -516,8 +528,9 @@ class WinningRetriever:
         # Sort by score
         scores.sort(key=lambda x: x['score'], reverse=True)
 
-        # Cache results
-        self.chunk_cache[cache_key] = scores
+        # Cache results (limited for memory)
+        if len(self.chunk_cache) < 50:  # Limit cache size
+            self.chunk_cache[cache_key] = scores
 
         # Log scores
         if scores:
@@ -562,14 +575,14 @@ class WinningReasoningEngine:
         return [r for r in results if not isinstance(r, Exception)]
 
     async def reason(self, question: str, context: List[Dict], tables: List = None, priority_score: float = 1.0) -> Dict:
-        """Generate accurate answer with priority-based resource allocation"""
+        """Generate accurate answer with priority-based resource allocation - OPTIMIZED FOR 1GB MEMORY"""
         # Check cache
         cache_key = hashlib.md5(f"{question}:{context[0]['text'][:100] if context else ''}:{priority_score}".encode()).hexdigest()
         if cache_key in self.answer_cache:
             return self.answer_cache[cache_key]
 
-        # Adjust context size based on priority - OPTIMIZED FOR SPEED
-        context_size = min(25, int(15 * priority_score))  # OPTIMIZED context for speed
+        # Adjust context size based on priority - OPTIMIZED FOR 1GB MEMORY
+        context_size = min(15, int(10 * priority_score))  # Reduced from 25/15 for memory
 
         # Use more context for better accuracy
         context_parts = []
@@ -577,14 +590,14 @@ class WinningReasoningEngine:
             score = chunk.get('score', 0)
             context_parts.append(f"[Context {i+1} - Score: {score:.1f}]\n{chunk['text']}\n")
 
-        # Add relevant tables if available
+        # Add relevant tables if available (limited for memory)
         table_context = ""
         if tables and any(kw in question.lower() for kw in ['table', 'limit', 'amount', 'coverage', 'plan', 'maximum', 'minimum']):
             table_context = "\n\nRELEVANT TABLES:\n"
-            for table in tables[:5]:
+            for table in tables[:3]:  # Reduced from 5 for memory
                 if table.get('data'):
                     table_context += f"\n[Table Page {table.get('page', 'N/A')}]\n"
-                    for row in table['data'][:20]:
+                    for row in table['data'][:10]:  # Reduced from 20 for memory
                         if row:
                             table_context += " | ".join([str(c) if c else "" for c in row]) + "\n"
 
@@ -645,8 +658,8 @@ Answer:"""
 
         # Try multiple models in parallel for better accuracy and speed
         try:
-            # Adjust max_tokens based on priority - OPTIMIZED FOR SPEED
-            max_tokens = min(Config.MAX_TOKENS, int(800 * priority_score))
+            # Adjust max_tokens based on priority - OPTIMIZED FOR 1GB MEMORY
+            max_tokens = min(Config.MAX_TOKENS, int(600 * priority_score))  # Reduced from 800
 
             messages = [
                 {
@@ -686,14 +699,15 @@ Answer:"""
             'priority_score': priority_score
         }
 
-        # Cache result
-        self.answer_cache[cache_key] = result
+        # Cache result (limited for memory)
+        if len(self.answer_cache) < 50:  # Limit cache size
+            self.answer_cache[cache_key] = result
 
         return result
 
 
 def create_winning_chunks(doc_data: Dict) -> List[Dict]:
-    """Create optimized chunks for maximum retrieval accuracy with caching"""
+    """Create optimized chunks for maximum retrieval accuracy with caching - OPTIMIZED FOR 1GB MEMORY"""
     chunks = []
     full_text = doc_data.get('full_text', '')
 
@@ -706,12 +720,12 @@ def create_winning_chunks(doc_data: Dict) -> List[Dict]:
         logger.info("Using cached chunks")
         return chunk_cache[text_hash]
 
-    # Multiple chunk sizes for comprehensive coverage (optimized for token limits)
+    # Multiple chunk sizes for comprehensive coverage (optimized for 1GB memory)
     configs = [
-        {'size': Config.MAX_CHUNK_SIZE, 'overlap': 600},      # Large chunks for context
-        {'size': Config.MEDIUM_CHUNK_SIZE, 'overlap': 400},   # Medium chunks
-        {'size': Config.SMALL_CHUNK_SIZE, 'overlap': 250},    # Small chunks for specific info
-        {'size': Config.MINI_CHUNK_SIZE, 'overlap': 125},     # Very small chunks for exact matches
+        {'size': Config.MAX_CHUNK_SIZE, 'overlap': 300},      # Large chunks for context
+        {'size': Config.MEDIUM_CHUNK_SIZE, 'overlap': 200},   # Medium chunks
+        {'size': Config.SMALL_CHUNK_SIZE, 'overlap': 125},    # Small chunks for specific info
+        {'size': Config.MINI_CHUNK_SIZE, 'overlap': 75},      # Very small chunks for exact matches
     ]
 
     for config in configs:
@@ -742,18 +756,18 @@ def create_winning_chunks(doc_data: Dict) -> List[Dict]:
 
             pos += (size - overlap)
 
-    # Add page-based chunks
+    # Add page-based chunks (limited for memory)
     if '[PAGE' in full_text:
         pages = re.split(r'\[PAGE \d+\]', full_text)
-        for i, page in enumerate(pages):
+        for i, page in enumerate(pages[:20]):  # Limit to 20 pages for memory
             if len(page.strip()) > 100:
                 # Split very large pages
-                if len(page) > 5000:
-                    for j in range(0, len(page), 4000):
-                        page_chunk = page[j:j+4000]
+                if len(page) > 3000:  # Reduced from 5000
+                    for j in range(0, len(page), 2000):  # Reduced from 4000
+                        page_chunk = page[j:j+2000]
                         if len(page_chunk.strip()) > 100:
                             chunks.append({
-                                'text': f"[PAGE {i+1} Part {j//4000 + 1}] {page_chunk.strip()}",
+                                'text': f"[PAGE {i+1} Part {j//2000 + 1}] {page_chunk.strip()}",
                                 'metadata': {'type': 'page', 'page': i+1}
                             })
                 else:
@@ -762,20 +776,20 @@ def create_winning_chunks(doc_data: Dict) -> List[Dict]:
                         'metadata': {'type': 'page', 'page': i+1}
                     })
 
-    # Add table chunks
+    # Add table chunks (limited for memory)
     if '[TABLE' in full_text:
-        tables = re.findall(r'(\[TABLE[^\]]*\][^[]{0,5000})', full_text)
-        for i, table in enumerate(tables):
+        tables = re.findall(r'(\[TABLE[^\]]*\][^[]{0,3000})', full_text)  # Reduced from 5000
+        for i, table in enumerate(tables[:10]):  # Limit to 10 tables for memory
             if table.strip():
                 chunks.append({
                     'text': table.strip(),
                     'metadata': {'type': 'table', 'index': i}
                 })
 
-    # Add sentence-level chunks for exact matching
+    # Add sentence-level chunks for exact matching (limited for memory)
     sentences = re.split(r'[.!?]+', full_text)
-    for i, sentence in enumerate(sentences):
-        if len(sentence.strip()) > 50 and len(sentence.strip()) < 1200:
+    for i, sentence in enumerate(sentences[:100]):  # Limit to 100 sentences for memory
+        if len(sentence.strip()) > 50 and len(sentence.strip()) < 800:  # Reduced max length
             chunks.append({
                 'text': sentence.strip(),
                 'metadata': {'type': 'sentence', 'index': i}
@@ -791,10 +805,16 @@ def create_winning_chunks(doc_data: Dict) -> List[Dict]:
             seen.add(chunk_hash)
             unique.append(chunk)
 
-    logger.info(f"Created {len(unique)} unique chunks")
+    # Limit total chunks for memory efficiency
+    if len(unique) > 300:  # Limit to 300 chunks for 1GB memory
+        unique = unique[:300]
+        logger.info("Limited chunks to 300 for memory efficiency")
 
-    # Cache the chunks
-    chunk_cache[text_hash] = unique
+    logger.info(f"Created {len(unique)} unique chunks (memory optimized)")
+
+    # Cache the chunks (limited for memory)
+    if len(chunk_cache) < 20:  # Limit cache size
+        chunk_cache[text_hash] = unique
     return unique
 
 
@@ -866,13 +886,13 @@ async def process_query(
 
             logger.info(f"Question priorities: {[(q[1][:30], q[2]) for q in question_priorities[:3]]}")
 
-            # Process questions in priority order
+            # Process questions in priority order - OPTIMIZED FOR 1GB MEMORY
             answers = [""] * len(request.questions)
             for original_index, question, priority_score in question_priorities:
                 logger.info(f"Processing Q{original_index+1} (Priority: {priority_score:.1f}x): {question[:50]}...")
 
-                # Retrieve with priority-based parameters - OPTIMIZED FOR SPEED
-                relevant = retriever.retrieve(question, top_k=25, priority_score=priority_score)  # Reduced for speed
+                # Retrieve with priority-based parameters - OPTIMIZED FOR 1GB MEMORY
+                relevant = retriever.retrieve(question, top_k=15, priority_score=priority_score)  # Reduced for memory
 
                 if not relevant:
                     answers[original_index] = "No relevant information found in the document for this question."
@@ -891,7 +911,7 @@ async def process_query(
 
             return {"answers": answers}
 
-        # Execute with timeout
+        # Execute with timeout - OPTIMIZED FOR 1GB MEMORY
         try:
             response = await asyncio.wait_for(
                 process_with_timeout(),
